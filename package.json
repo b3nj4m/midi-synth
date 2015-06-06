@@ -1,0 +1,25 @@
+{
+  "name": "midi-synth",
+  "version": "0.0.1",
+  "description": "An audio synthesizer using the WebAudio MIDI API",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b3nj4m/midi-synth.git"
+  },
+  "keywords": [
+    "midi",
+    "synth",
+    "synthesizer",
+    "web-audio"
+  ],
+  "author": "Ben Robbins <ben.robbins@gmail.com> (https://b3nj4m.com/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/b3nj4m/midi-synth/issues"
+  },
+  "homepage": "https://github.com/b3nj4m/midi-synth#readme"
+}
