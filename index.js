@@ -11,6 +11,7 @@
       this.attack = opts.attack || 0.1;
       this.release = opts.release || 0.1;
       this.portamento = opts.portamento || 0.1;
+      this.debug = opts.debug || false;
 
       // the Web Audio "context" object
       this.context = null;
@@ -57,6 +58,8 @@
 
       for (var input of this.midiAccess.inputs.values()) {
         if ((this.inputID === null && this.inputName === null) || this.inputID === input.id || this.inputName === input.name) {
+          this.info('binding to input: ' + inputToString(input));
+
           input.onmidimessage = this.MIDIMessage.bind(this);
           haveAtLeastOneDevice = true;
         }
@@ -77,7 +80,7 @@
         errs.push('Available inputs:');
 
         for (var input of this.midiAccess.inputs.values()) {
-          errs.push('  id: "' + input.id + '", name: "' + input.name + '"');
+          errs.push(inputToString(input));
         }
 
         errs.push('No usable MIDI inputs found. Try removing/fixing inputName/inputID?');
@@ -91,17 +94,20 @@
     };
 
     Synth.prototype.MIDIMessage = function(event) {
+      if (this.debug) {
+        this.info('midi event', event);
+      }
       // Mask off the lower nibble (MIDI channel, which we don't care about)
       switch (event.data[0] & 0xf0) {
         case 0x90:
           // if velocity != 0, this is a note-on message
           if (event.data[2] !== 0) {
-            noteOn(event.data[1]);
+            this.noteOn(event.data[1]);
             break;
           }
         // if velocity == 0, fall thru: it's a note-off.  MIDI's weird, y'all.
         case 0x80:
-          noteOff(event.data[1]);
+          this.noteOff(event.data[1]);
           break;
       }
     };
@@ -120,38 +126,49 @@
     };
 
     Synth.prototype.frequencyOn = function(frequency, attack, release, portamento) {
-      attack = attack || this.attack;
-      release = release || this.release;
-      portamento = portamento || this.portamento;
+      if (this.activeFrequencies[frequency] === undefined) {
+        attack = attack || this.attack;
+        release = release || this.release;
+        portamento = portamento || this.portamento;
 
-      this.activeFrequenciesStack.push(frequency);
-      this.activeFrequencies[frequency] = {frequency: frequency, attack: attack, release: release, portamento: portamento, index: this.activeFrequenciesStack.length - 1};
+        this.activeFrequenciesStack.push(frequency);
+        this.activeFrequencies[frequency] = {frequency: frequency, attack: attack, release: release, portamento: portamento, index: this.activeFrequenciesStack.length - 1};
 
-      this.oscillator.frequency.cancelScheduledValues(0);
-      this.oscillator.frequency.setTargetAtTime(frequency, 0, portamento);
-      this.envelope.gain.cancelScheduledValues(0);
-      this.envelope.gain.setTargetAtTime(1.0, 0, attack);
+        this.oscillator.frequency.cancelScheduledValues(0);
+        this.oscillator.frequency.setTargetAtTime(frequency, 0, portamento);
+        this.envelope.gain.cancelScheduledValues(0);
+        this.envelope.gain.setTargetAtTime(1.0, 0, attack);
+
+        if (this.debug) {
+          this.info('on', this.activeFrequencies[frequency]);
+        }
+      }
     };
 
     Synth.prototype.frequencyOff = function(frequency) {
       var release = this.release;
+      var active = this.activeFrequencies[frequency];
 
-      if (this.activeFrequencies[frequency] !== undefined) {
-        release = this.activeFrequencies[frequency].release;
-        this.activeFrequenciesStack.splice(this.activeFrequencies[frequency].index, 1);
+      if (active !== undefined) {
+        release = active.release;
+        this.activeFrequenciesStack.splice(active.index, 1);
         delete this.activeFrequencies[frequency];
-      }
 
-      // shut off the envelope if nothing's active
-      if (this.activeFrequenciesStack.length === 0) {
-        this.envelope.gain.cancelScheduledValues(0);
-        this.envelope.gain.setTargetAtTime(0.0, 0, release);
-      }
-      else {
-        var active = this.activeFrequencies[this.activeFrequenciesStack[this.activeFrequenciesStack.length - 1]];
+        // shut off the envelope if nothing's active
+        if (this.activeFrequenciesStack.length === 0) {
+          this.envelope.gain.cancelScheduledValues(0);
+          this.envelope.gain.setTargetAtTime(0.0, 0, release);
+        }
+        else {
+          var active = this.activeFrequencies[this.activeFrequenciesStack[this.activeFrequenciesStack.length - 1]];
 
-        this.oscillator.frequency.cancelScheduledValues(0);
-        this.oscillator.frequency.setTargetAtTime(active.frequency, 0, active.portamento);
+          this.oscillator.frequency.cancelScheduledValues(0);
+          this.oscillator.frequency.setTargetAtTime(active.frequency, 0, active.portamento);
+        }
+
+        if (this.debug) {
+          this.info('off', active);
+        }
       }
     };
 
@@ -166,6 +183,16 @@
     Synth.prototype.noteOff = function(noteNumber) {
       return this.frequencyOff(this.frequencyFromNoteNumber(noteNumber));
     };
+
+    Synth.prototype.info = function() {
+      if (this.debug) {
+        global.console.info.apply(global.console, ['Synth:'].concat(global.Array.prototype.slice.call(arguments), this));
+      }
+    }
+
+    function inputToString(input) {
+      return input.name + ' (' + input.id + ')';
+    }
 
     return Synth;
   }
