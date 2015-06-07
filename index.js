@@ -1,13 +1,14 @@
 /* based on W3C MIDI example: https://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer */
 
 (function() {
-  function defineSynth() {
+  function defineSynth(AssociativeArray) {
     var global = this;
 
     function Synth(opts) {
       opts = opts || {};
       this.inputName = opts.inputName || null;
       this.inputID = opts.inputID || null;
+      this.bindToInputs = opts.bindToInputs === undefined ? true : opts.bindToInputs;
       this.attack = opts.attack || 0.1;
       this.release = opts.release || 0.1;
       this.portamento = opts.portamento || 0.1;
@@ -16,15 +17,20 @@
       // the Web Audio "context" object
       this.context = null;
       // the MIDIAccess object.
-      this.midiAccess = null;
+      this.midi = null;
       // the single oscillator
       this.oscillator = null;
       // the envelope for the single oscillator
       this.envelope = null;
-      // the stack of actively-pressed keys
-      this.activeFrequenciesStack = [];
-      // the table of active frequencies with attack, release, etc.
-      this.activeFrequencies = {};
+      // the AssociativeArray of active frequencies with attack, release, etc.
+      this.activeFrequencies = new AssociativeArray();
+      // the list of inputs we're listening to
+      this.inputs = new AssociativeArray();
+      // the AssociativeArray of available inputs
+      this.availableInputs = new AssociativeArray();
+
+      this.MIDIMessageHandler = this.MIDIMessage.bind(this);
+      this.MIDIConnectHandler = this.MIDIConnect.bind(this);
 
       this.ready = this.init();
     }
@@ -53,19 +59,25 @@
     };
 
     Synth.prototype.MIDISuccess = function(midi) {
-      this.midiAccess = midi;
-      var haveAtLeastOneDevice = false;
+      var self = this;
+      var input;
+      this.midi = midi;
 
-      for (var input of this.midiAccess.inputs.values()) {
-        if ((this.inputID === null && this.inputName === null) || this.inputID === input.id || this.inputName === input.name) {
-          this.info('binding to input: ' + inputToString(input));
+      this.midi.onstatechange = this.MIDIConnectHandler;
 
-          input.onmidimessage = this.MIDIMessage.bind(this);
-          haveAtLeastOneDevice = true;
+      for (input of this.midi.inputs.values()) {
+        this.availableInputs.push(input.id, input);
+      }
+
+      if (this.bindToInputs) {
+        for (input of this.midi.inputs.values()) {
+          if ((this.inputID === null && this.inputName === null) || this.inputID === input.id || this.inputName === input.name) {
+            this.bindToInput(input);
+          }
         }
       }
 
-      if (haveAtLeastOneDevice) {
+      if (!this.bindToInputs || this.inputs.length > 0) {
         return global.Promise.resolve();
       }
       else {
@@ -79,8 +91,8 @@
 
         errs.push('Available inputs:');
 
-        for (var input of this.midiAccess.inputs.values()) {
-          errs.push(inputToString(input));
+        for (var input of this.midi.inputs.values()) {
+          errs.push(this.inputToString(input));
         }
 
         errs.push('No usable MIDI inputs found. Try removing/fixing inputName/inputID?');
@@ -94,9 +106,8 @@
     };
 
     Synth.prototype.MIDIMessage = function(event) {
-      if (this.debug) {
-        this.info('midi event', event);
-      }
+      this.info('midi event', event);
+
       // Mask off the lower nibble (MIDI channel, which we don't care about)
       switch (event.data[0] & 0xf0) {
         case 0x90:
@@ -112,63 +123,94 @@
       }
     };
 
+    Synth.prototype.MIDIConnect = function(event) {
+      var input = event.port || event;
+
+      if (input.type === 'input') {
+        if (input.state === 'connected') {
+          this.availableInputs.push(input.id, input);
+
+          this.info('midi connect', event);
+        }
+        else {
+          this.availableInputs.remove(input.id);
+
+          this.info('midi disconnect', event);
+        }
+      }
+    };
+
+    Synth.prototype.bindToInput = function(input) {
+      this.info('binding to input: ' + this.inputToString(input));
+
+      input.onmidimessage = this.MIDIMessageHandler;
+      //TODO disconnects don't appear to be working yet in Linux/ALSA (only tested with vkeybd)
+      input.onstatechange = this.MIDIConnectHandler;
+      //TODO not implemented yet?
+      //input.addEventListener('midimessage', this.MIDIMessageHandler);
+      this.inputs.push(input.id, input);
+    };
+
+    Synth.prototype.unbindToInput = function(input) {
+      this.info('unbinding to input: ' + this.inputToString(input));
+
+      input.onmidimessage = null;
+      input.onstatechange = null;
+      //TODO not implemented yet?
+      //input.removeEventListener('midimessage', this.MIDIMessageHandler);
+      this.inputs.remove(input.id);
+    };
+
     Synth.prototype.frequencyFromNoteNumber = function(note) {
       return 440 * Math.pow(2, (note - 69) / 12);
     };
 
     Synth.prototype.toggleFrequency = function(frequency, attack, release, portamento) {
-      if (this.activeFrequencies[frequency] === undefined) {
-        return this.frequencyOn(frequency, attack, release, portamento);
+      if (this.activeFrequencies.has(frequency)) {
+        return this.frequencyOff(frequency, attack, release, portamento);
       }
       else {
-        return this.frequencyOff(frequency, attack, release, portamento);
+        return this.frequencyOn(frequency, attack, release, portamento);
       }
     };
 
     Synth.prototype.frequencyOn = function(frequency, attack, release, portamento) {
-      if (this.activeFrequencies[frequency] === undefined) {
+      if (!this.activeFrequencies.has(frequency)) {
         attack = attack || this.attack;
         release = release || this.release;
         portamento = portamento || this.portamento;
 
-        this.activeFrequenciesStack.push(frequency);
-        this.activeFrequencies[frequency] = {frequency: frequency, attack: attack, release: release, portamento: portamento, index: this.activeFrequenciesStack.length - 1};
+        this.activeFrequencies.push(frequency, {frequency: frequency, attack: attack, release: release, portamento: portamento});
 
         this.oscillator.frequency.cancelScheduledValues(0);
         this.oscillator.frequency.setTargetAtTime(frequency, 0, portamento);
         this.envelope.gain.cancelScheduledValues(0);
         this.envelope.gain.setTargetAtTime(1.0, 0, attack);
 
-        if (this.debug) {
-          this.info('on', this.activeFrequencies[frequency]);
-        }
+        this.info('on', this.activeFrequencies.get(frequency));
       }
     };
 
     Synth.prototype.frequencyOff = function(frequency) {
       var release = this.release;
-      var active = this.activeFrequencies[frequency];
+      var active = this.activeFrequencies.remove(frequency);
 
       if (active !== undefined) {
         release = active.release;
-        this.activeFrequenciesStack.splice(active.index, 1);
-        delete this.activeFrequencies[frequency];
 
         // shut off the envelope if nothing's active
-        if (this.activeFrequenciesStack.length === 0) {
+        if (this.activeFrequencies.length === 0) {
           this.envelope.gain.cancelScheduledValues(0);
           this.envelope.gain.setTargetAtTime(0.0, 0, release);
         }
         else {
-          var active = this.activeFrequencies[this.activeFrequenciesStack[this.activeFrequenciesStack.length - 1]];
+          var active = this.activeFrequencies.last();
 
           this.oscillator.frequency.cancelScheduledValues(0);
           this.oscillator.frequency.setTargetAtTime(active.frequency, 0, active.portamento);
         }
 
-        if (this.debug) {
-          this.info('off', active);
-        }
+        this.info('off', active);
       }
     };
 
@@ -188,20 +230,20 @@
       if (this.debug) {
         global.console.info.apply(global.console, ['Synth:'].concat(global.Array.prototype.slice.call(arguments), this));
       }
-    }
+    };
 
-    function inputToString(input) {
+    Synth.prototype.inputToString = function(input) {
       return input.name + ' (' + input.id + ')';
-    }
+    };
 
     return Synth;
   }
 
   if (typeof module === 'object' && typeof require === 'function') {
-    module.exports = defineSynth.call(this);
+    module.exports = defineSynth.call(this, require('./associative-array'));
   }
   else if (typeof define === 'function' && define.amd) {
-    define([], defineSynth.bind(this));
+    define(['./associative-array'], defineSynth.bind(this));
   }
   else {
     this.Synth = defineSynth.call(this);
