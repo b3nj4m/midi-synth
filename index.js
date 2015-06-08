@@ -2,8 +2,6 @@
 
 (function() {
   function defineSynth(AssociativeArray) {
-    var global = this;
-
     function Synth(opts) {
       opts = opts || {};
       this.inputName = opts.inputName || null;
@@ -36,11 +34,11 @@
     }
 
     Synth.prototype.init = function() {
-      var AudioContext = global.AudioContext || global.webkitAudioContext;
+      var AudioContext = AudioContext || webkitAudioContext;
 
       this.context = new AudioContext();
 
-      if (global.navigator.requestMIDIAccess) {
+      if (navigator.requestMIDIAccess) {
         // set up the basic oscillator chain, muted to begin with.
         this.oscillator = this.context.createOscillator();
         this.oscillator.frequency.setValueAtTime(110, 0);
@@ -51,11 +49,20 @@
         this.envelope.gain.value = 0.0;
         this.oscillator.start(0);
 
-        return global.navigator.requestMIDIAccess().then(this.MIDISuccess.bind(this), this.MIDIFailure.bind(this));
+        if (this.bindToInputs) {
+          return this.scanInputs();
+        }
+        else {
+          return Promise.resolve();
+        }
       }
       else {
-        return global.Promise.reject('No MIDI support found');
+        return Promise.reject('No MIDI support found');
       }
+    };
+
+    Synth.prototype.initMIDI = function() {
+      return navigator.requestMIDIAccess().then(this.MIDISuccess.bind(this), this.MIDIFailure.bind(this));
     };
 
     Synth.prototype.MIDISuccess = function(midi) {
@@ -65,40 +72,7 @@
 
       this.midi.onstatechange = this.MIDIConnectHandler;
 
-      for (input of this.midi.inputs.values()) {
-        this.availableInputs.push(input.id, input);
-      }
-
-      if (this.bindToInputs) {
-        for (input of this.midi.inputs.values()) {
-          if ((this.inputID === null && this.inputName === null) || this.inputID === input.id || this.inputName === input.name) {
-            this.bindToInput(input);
-          }
-        }
-      }
-
-      if (!this.bindToInputs || this.inputs.length > 0) {
-        return global.Promise.resolve();
-      }
-      else {
-        var errs = [];
-        if (this.inputID !== null) {
-          errs.push('No input matching ID "' + this.inputID + '".');
-        }
-        if (this.inputName !== null) {
-          errs.push('No input matching name "' + this.inputName + '".');
-        }
-
-        errs.push('Available inputs:');
-
-        for (var input of this.midi.inputs.values()) {
-          errs.push(this.inputToString(input));
-        }
-
-        errs.push('No usable MIDI inputs found. Try removing/fixing inputName/inputID?');
-
-        return global.Promise.reject(errs.join('\n'));
-      }
+      return this.midi;
     };
 
     Synth.prototype.MIDIFailure = function(err) {
@@ -130,6 +104,10 @@
         if (input.state === 'connected') {
           this.availableInputs.push(input.id, input);
 
+          if (this.bindToInputs) {
+            this.bindToMatchingInput(input);
+          }
+
           this.info('midi connect', event);
         }
         else {
@@ -140,15 +118,69 @@
       }
     };
 
-    Synth.prototype.bindToInput = function(input) {
-      this.info('binding to input: ' + this.inputToString(input));
+    Synth.prototype.scanInputs = function() {
+      var self = this;
 
-      input.onmidimessage = this.MIDIMessageHandler;
-      //TODO disconnects don't appear to be working yet in Linux/ALSA (only tested with vkeybd)
-      input.onstatechange = this.MIDIConnectHandler;
-      //TODO not implemented yet?
-      //input.addEventListener('midimessage', this.MIDIMessageHandler);
-      this.inputs.push(input.id, input);
+      return this.initMIDI().then(function(midi) {
+        for (var input of midi.inputs.values()) {
+          self.availableInputs.push(input.id, input);
+        }
+
+        if (self.bindToInputs) {
+          return self.bindToMatchingInputs();
+        }
+        return Promise.resolve(self.availableInputs);
+      });
+    };
+
+    Synth.prototype.bindToMatchingInput = function(input) {
+      if ((this.inputID === null && this.inputName === null) || this.inputID === input.id || this.inputName === input.name) {
+        this.bindToInput(input);
+      }
+      else {
+        this.info('skipping input', this.inputToString(input));
+      }
+    };
+
+    Synth.prototype.bindToMatchingInputs = function() {
+      var self = this;
+
+      this.availableInputs.forEach(this.bindToMatchingInput.bind(this));
+
+      if (this.inputs.length > 0) {
+        return Promise.resolve(this.inputs);
+      }
+      else {
+        var errs = [];
+        if (this.inputID !== null) {
+          errs.push('No input matching ID "' + this.inputID + '".');
+        }
+        if (this.inputName !== null) {
+          errs.push('No input matching name "' + this.inputName + '".');
+        }
+
+        errs.push('Available inputs:');
+
+        errs = errs.concat(this.availableInputs.map(this.inputToString.bind(this)));
+
+        errs.push('No usable MIDI inputs found. Try removing/fixing inputName/inputID?');
+
+        return Promise.reject(errs.join('\n'));
+      }
+    };
+
+    Synth.prototype.bindToInput = function(input) {
+      if (!this.inputs.has(input.id)) {
+        this.info('binding to input: ' + this.inputToString(input));
+
+        this.inputs.push(input.id, input);
+
+        input.onmidimessage = this.MIDIMessageHandler;
+        //TODO disconnects don't appear to be working yet in Linux/ALSA (only tested with vkeybd)
+        input.onstatechange = this.MIDIConnectHandler;
+        //TODO not implemented yet?
+        //input.addEventListener('midimessage', this.MIDIMessageHandler);
+      }
     };
 
     Synth.prototype.unbindToInput = function(input) {
@@ -228,7 +260,7 @@
 
     Synth.prototype.info = function() {
       if (this.debug) {
-        global.console.info.apply(global.console, ['Synth:'].concat(global.Array.prototype.slice.call(arguments), this));
+        console.info.apply(console, ['Synth:'].concat(Array.prototype.slice.call(arguments), this));
       }
     };
 
@@ -240,10 +272,10 @@
   }
 
   if (typeof module === 'object' && typeof require === 'function') {
-    module.exports = defineSynth.call(this, require('./associative-array'));
+    module.exports = defineSynth.call(this, require('associative-array'));
   }
   else if (typeof define === 'function' && define.amd) {
-    define(['./associative-array'], defineSynth.bind(this));
+    define(['associative-array'], defineSynth.bind(this));
   }
   else {
     this.Synth = defineSynth.call(this);
