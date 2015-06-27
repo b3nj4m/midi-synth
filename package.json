@@ -1,6 +1,6 @@
 {
   "name": "midi-synth",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "An audio synthesizer library using the WebAudio MIDI API",
   "main": "index.js",
   "scripts": {
