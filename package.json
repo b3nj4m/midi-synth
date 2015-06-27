@@ -23,6 +23,6 @@
   },
   "homepage": "https://github.com/b3nj4m/midi-synth#readme",
   "dependencies": {
-    "associative-array": "0.0.4"
+    "associative-array": "^1.0.1"
   }
 }
