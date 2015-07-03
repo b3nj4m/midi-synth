@@ -2,6 +2,14 @@
   "sine": {
     "nodes": [
       [
+        {"nodeType": "oscillator", "type": "sine", "detune": 0}
+      ]
+    ],
+    "gain": 1
+  },
+  "sine-distorted": {
+    "nodes": [
+      [
         {"nodeType": "oscillator", "type": "sine", "detune": 0},
         {"nodeType": "shaper", "curve": {"type": "distort", "amount": 400}}
       ]

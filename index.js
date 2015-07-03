@@ -44,10 +44,11 @@
       this.MIDIMessageHandler = this.MIDIMessage.bind(this);
       this.MIDIConnectHandler = this.MIDIConnect.bind(this);
 
-      this.ready = this.init(opts.settings || defaultSettings[opts.settingName] || defaultSettings.sine);
+      this.ready = this.init(opts.settings || this.settings[opts.settingName] || this.settings.sine);
     }
 
     Synth.prototype.curves = curves;
+    Synth.prototype.settings = defaultSettings;
 
     Synth.prototype.createContext = function() {
       this.context = new Context();
@@ -181,7 +182,17 @@
       this.nodes = [];
     };
 
+    Synth.prototype.applyPreset = function(name) {
+      if (this.settings[name]) {
+        this.applySettings(this.settings[name]);
+      }
+      else {
+        this.info('Setting', name, 'does not exist.');
+      }
+    };
+
     Synth.prototype.applySettings = function(settings) {
+      this.envelope.gain.value = 0.0;
       this.removeNodes();
 
       if (settings.nodes && settings.nodes.length > 0) {
