@@ -70,3 +70,38 @@ document.body.addEventListener('keyup', function(e) {
   s.noteOff(e.keyCode);
 });
 ```
+
+### Specifying synthesizer configuration
+
+#### Use a preset (see [presets.json](presets.json))
+
+```javascript
+var Synth = require('midi-synth');
+
+var s = new Synth({
+  //print info messages
+  debug: true
+});
+
+s.applyPreset('sine-distorted');
+
+//play something on your MIDI keyboard
+```
+
+#### Use your own preset
+
+```javascript
+var Synth = require('midi-synth');
+
+var s = new Synth({
+  //print info messages
+  debug: true
+});
+
+s.applySettings({gain: 1.0, nodes: [
+  [{nodeType: 'oscillator', type: 'sine'}, {nodeType: 'filter', type: 'lowpass', frequency: 100}],
+  [{nodeType: 'oscillator', type: 'square'}]
+]});
+
+//play something on your MIDI keyboard
+```

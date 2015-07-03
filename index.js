@@ -1,7 +1,7 @@
 /* based on W3C MIDI example: https://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer */
 
 (function() {
-  function defineSynth(AssociativeArray, defaultSettings, curves) {
+  function defineSynth(AssociativeArray, presets, curves) {
     var Context = AudioContext || webkitAudioContext;
 
     function Synth(opts) {
@@ -44,11 +44,11 @@
       this.MIDIMessageHandler = this.MIDIMessage.bind(this);
       this.MIDIConnectHandler = this.MIDIConnect.bind(this);
 
-      this.ready = this.init(opts.settings || this.settings[opts.settingName] || this.settings.sine);
+      this.ready = this.init(opts.settings || this.presets[opts.settingName] || this.presets.sine);
     }
 
     Synth.prototype.curves = curves;
-    Synth.prototype.settings = defaultSettings;
+    Synth.prototype.presets = presets;
 
     Synth.prototype.createContext = function() {
       this.context = new Context();
@@ -183,8 +183,8 @@
     };
 
     Synth.prototype.applyPreset = function(name) {
-      if (this.settings[name]) {
-        this.applySettings(this.settings[name]);
+      if (this.presets[name]) {
+        this.applySettings(this.presets[name]);
       }
       else {
         this.info('Setting', name, 'does not exist.');
@@ -447,10 +447,10 @@
   }
 
   if (typeof module === 'object' && typeof require === 'function') {
-    module.exports = defineSynth.call(this, require('associative-array'), require('./default-settings.json'), require('./curves'));
+    module.exports = defineSynth.call(this, require('associative-array'), require('./presets.json'), require('./curves'));
   }
   else if (typeof define === 'function' && define.amd) {
-    define(['associative-array', 'default-settings.json', 'curves'], defineSynth.bind(this));
+    define(['associative-array', 'presets.json', 'curves'], defineSynth.bind(this));
   }
   else {
     this.Synth = defineSynth.call(this);
