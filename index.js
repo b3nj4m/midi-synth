@@ -132,7 +132,6 @@
           var curveCreator = this.curves.get(opts.curve.type);
           if (curveCreator) {
             shaper.curve = curveCreator(opts.curve, this.context.sampleRate);
-            this.info('shaper curve', opts.curve.type, curveCreator, curveCreator(opts.curve, this.context.sampleRate));
           }
         }
       }
