@@ -1,0 +1,11 @@
+{
+  "sine": {
+    "oscillators": [
+      {"type": "sine", "detune": 0}
+    ],
+    "filters": [],
+    "shapers": [],
+    "gain": 1,
+    "delay": 0
+  }
+}

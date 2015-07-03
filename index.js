@@ -1,7 +1,9 @@
 /* based on W3C MIDI example: https://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer */
 
 (function() {
-  function defineSynth(AssociativeArray) {
+  function defineSynth(AssociativeArray, defaultSettings) {
+    var AudioContext = AudioContext || webkitAudioContext;
+
     function Synth(opts) {
       opts = opts || {};
       this.inputName = opts.inputName || null;
@@ -16,8 +18,6 @@
       this.context = null;
       // the MIDIAccess object.
       this.midi = null;
-      // the single oscillator
-      this.oscillator = null;
       // the envelope for the single oscillator
       this.envelope = null;
       // the AssociativeArray of active frequencies with attack, release, etc.
@@ -30,25 +30,34 @@
       this.MIDIMessageHandler = this.MIDIMessage.bind(this);
       this.MIDIConnectHandler = this.MIDIConnect.bind(this);
 
-      this.ready = this.init();
+      this.ready = this.init(opts.settings || defaultSettings[opts.settingName] || defaultSettings.sine);
     }
 
-    Synth.prototype.init = function() {
-      var AudioContext = AudioContext || webkitAudioContext;
-
+    Synth.prototype.createContext = function() {
       this.context = new AudioContext();
+      this.oscillators = [];
+      this.filters = [];
+      this.shapers = [];
+      this.gain = null;
+      this.delay = null;
+
+      this.envelope = this.context.createGain();
+      this.envelope.connect(this.context.destination);
+      this.envelope.gain.value = 0.0;
+
+      this.envelope.connect(this.context.destination);
+
+      return this.context;
+    };
+
+    Synth.prototype.init = function(settings) {
+      this.createContext();
+
+      if (settings) {
+        this.applySettings(settings);
+      }
 
       if (navigator.requestMIDIAccess) {
-        // set up the basic oscillator chain, muted to begin with.
-        this.oscillator = this.context.createOscillator();
-        this.oscillator.frequency.setValueAtTime(110, 0);
-        this.envelope = this.context.createGain();
-
-        this.oscillator.connect(this.envelope);
-        this.envelope.connect(this.context.destination);
-        this.envelope.gain.value = 0.0;
-        this.oscillator.start(0);
-
         if (this.bindToInputs) {
           return this.scanInputs();
         }
@@ -59,6 +68,116 @@
       else {
         return Promise.reject('No MIDI support found');
       }
+    };
+
+    //TODO JSON format for storing oscillator/filter configurations, naming, saving/loading
+    //TODO reuse oscillators, disable unused ones
+    //TODO reuse filters, disable unused ones
+    //{oscillators: [{type, detune}], filters: [{type, frequency, detune, q, gain}], shapers: [{curve, oversample}], gain, delay}
+    Synth.prototype.addOscillator = function(type, detune) {
+      var oscillator = this.context.createOscillator();
+
+      oscillator.type = type || 'sine';
+      oscillator.detune = detune || 0;
+      oscillator.frequency.setValueAtTime(110, 0);
+      oscillator.start(0);
+
+      this.oscillators.push(oscillator);
+
+      return oscillator;
+    };
+
+    Synth.prototype.addFilter = function(type, frequency, detune, q, gain) {
+      var filter = this.context.createBiquadFilter();
+
+      filter.type = type || 'lowpass';
+      filter.frequency = frequency || 20000;
+      filter.detune = detune || 0;
+      filter.Q = q || 1;
+      filter.gain || 0;
+
+      this.filters.push(filter);
+
+      return filter;
+    };
+
+    Synth.prototype.addShaper = function(curve, oversample) {
+      var shaper = this.context.createWaveShaper();
+
+      shaper.curve = curve || [-1, 1];
+      shaper.oversample = oversample || 'none';
+
+      this.shapers.push(shapers);
+
+      return shaper;
+    };
+
+    Synth.prototype.addGain = function(gain) {
+      this.gain = this.context.createGain();
+      this.gain.gain = gain;
+      return this.gain;
+    };
+
+    Synth.prototype.addDelay = function(delay) {
+      this.delay = this.context.createDelay(delay);
+      this.delay.delayTime = delay;
+      return this.delay;
+    };
+
+    Synth.prototype.exportSettings = function() {
+      var settings = {};
+
+      settings.gain = this.gain && this.gain.gain || 0;
+      settings.delay = this.delay && this.delay.delayTime || 0;
+
+      settings.oscillators = this.oscillators.map(function(oscillator) {
+        return {type: oscillator.type, detune: oscillator.detune};
+      });
+
+      settings.filters = this.filters.map(function(filter) {
+        return {type: filter.type, frequency: filter.frequency, detune: filter.detune, q: filter.Q, gain: filter.gain};
+      });
+
+      settings.shapers = this.shapers.map(function(shaper) {
+        return {curve: shaper.curve, oversample: shaper.oversample};
+      });
+
+      return settings;
+    };
+
+    Synth.prototype.applySettings = function(settings) {
+      //throw away old context, create new one :/
+      //seems to be the only way to get rid of old filters, etc.
+      return this.context.close().then(function() {
+        this.createContext();
+
+        if (settings.oscillators) {
+          settings.oscillators.forEach(function(values) {
+            var oscillator = this.addOscillator(values.type, values.detune);
+            oscillator.setValueAtTime(110, 0);
+          });
+        }
+
+        if (settings.filters) {
+          settings.filters.forEach(function(values) {
+            this.addFilter(values.type, values.frequency, values.detune, values.q, values.gain)
+          });
+        }
+
+        if (settings.shapers) {
+          settings.shapers.forEach(function(values) {
+            this.addShaper(values.curve, values.oversample);
+          });
+        }
+
+        if (settings.gain) {
+          this.addGain(settings.gain);
+        }
+
+        if (settings.delay) {
+          this.addDelay(settings.delay);
+        }
+      });
     };
 
     Synth.prototype.initMIDI = function() {
@@ -214,8 +333,11 @@
 
         this.activeFrequencies.push(frequency, {frequency: frequency, attack: attack, release: release, portamento: portamento});
 
-        this.oscillator.frequency.cancelScheduledValues(0);
-        this.oscillator.frequency.setTargetAtTime(frequency, 0, portamento);
+        this.oscillators.forEach(function(oscillator) {
+          oscillator.frequency.cancelScheduledValues(0);
+          oscillator.frequency.setTargetAtTime(frequency, 0, portamento);
+        });
+
         this.envelope.gain.cancelScheduledValues(0);
         this.envelope.gain.setTargetAtTime(1.0, 0, attack);
 
@@ -238,8 +360,10 @@
         else {
           var active = this.activeFrequencies.last();
 
-          this.oscillator.frequency.cancelScheduledValues(0);
-          this.oscillator.frequency.setTargetAtTime(active.frequency, 0, active.portamento);
+          this.oscillators.forEach(function(oscillator) {
+            oscillator.frequency.cancelScheduledValues(0);
+            oscillator.frequency.setTargetAtTime(active.frequency, 0, active.portamento);
+          });
         }
 
         this.info('off', active);
@@ -272,10 +396,10 @@
   }
 
   if (typeof module === 'object' && typeof require === 'function') {
-    module.exports = defineSynth.call(this, require('associative-array'));
+    module.exports = defineSynth.call(this, require('associative-array'), require('./default-settings.json'));
   }
   else if (typeof define === 'function' && define.amd) {
-    define(['associative-array'], defineSynth.bind(this));
+    define(['associative-array', 'default-settings.json'], defineSynth.bind(this));
   }
   else {
     this.Synth = defineSynth.call(this);
