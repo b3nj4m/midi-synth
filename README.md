@@ -3,7 +3,7 @@
 A WebAudio MIDI synthesizer library (no UI).
 Based on W3C MIDI example: https://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer
 
-Currently uses a single sine wave oscillator with adjustable attack, release, portamento.
+Currently supports any combination of oscillators, filters, wave shapers, and delays.
 
 ## Examples
 
