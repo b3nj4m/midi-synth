@@ -1,11 +1,11 @@
 {
   "sine": {
-    "oscillators": [
-      {"type": "sine", "detune": 0}
+    "nodes": [
+      [
+        {"nodeType": "oscillator", "type": "sine", "detune": 0},
+        {"nodeType": "shaper", "curve": {"type": "distort", "amount": 400}}
+      ]
     ],
-    "filters": [],
-    "shapers": [],
-    "gain": 1,
-    "delay": 0
+    "gain": 1
   }
 }

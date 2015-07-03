@@ -1,8 +1,8 @@
 /* based on W3C MIDI example: https://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer */
 
 (function() {
-  function defineSynth(AssociativeArray, defaultSettings) {
-    var AudioContext = AudioContext || webkitAudioContext;
+  function defineSynth(AssociativeArray, defaultSettings, curves) {
+    var Context = AudioContext || webkitAudioContext;
 
     function Synth(opts) {
       opts = opts || {};
@@ -27,25 +27,39 @@
       // the AssociativeArray of available inputs
       this.availableInputs = new AssociativeArray();
 
+      this.nodeCreators = new Map([
+        ['oscillator', this.createOscillator.bind(this)],
+        ['filter', this.createFilter.bind(this)],
+        ['shaper', this.createShaper.bind(this)],
+        ['delay', this.createDelay.bind(this)]
+      ]);
+
+      this.nodeExporters = new Map([
+        ['oscillator', this.exportOscillator.bind(this)],
+        ['filter', this.exportFilter.bind(this)],
+        ['shaper', this.exportShaper.bind(this)],
+        ['delay', this.exportDelay.bind(this)]
+      ]);
+
       this.MIDIMessageHandler = this.MIDIMessage.bind(this);
       this.MIDIConnectHandler = this.MIDIConnect.bind(this);
 
       this.ready = this.init(opts.settings || defaultSettings[opts.settingName] || defaultSettings.sine);
     }
 
+    Synth.prototype.curves = curves;
+
     Synth.prototype.createContext = function() {
-      this.context = new AudioContext();
+      this.context = new Context();
+      this.nodes = [];
       this.oscillators = [];
-      this.filters = [];
-      this.shapers = [];
-      this.gain = null;
-      this.delay = null;
+      this.gain = 1.0;
 
       this.envelope = this.context.createGain();
       this.envelope.connect(this.context.destination);
       this.envelope.gain.value = 0.0;
 
-      this.envelope.connect(this.context.destination);
+      this.info('Created context:', this.context);
 
       return this.context;
     };
@@ -71,15 +85,15 @@
     };
 
     //TODO JSON format for storing oscillator/filter configurations, naming, saving/loading
-    //TODO reuse oscillators, disable unused ones
-    //TODO reuse filters, disable unused ones
-    //{oscillators: [{type, detune}], filters: [{type, frequency, detune, q, gain}], shapers: [{curve, oversample}], gain, delay}
-    Synth.prototype.addOscillator = function(type, detune) {
+    //TODO nodes need to be setup in a pipeline with a very particular order...
+    //TODO let settings define the pipeline+ordering
+    //{nodes: [{nodeType: oscillator, type, detune}, {nodeType: filter, type, frequency, detune, q, gain}, {nodeType: shaper, curve, oversample}], gain, delay}
+    Synth.prototype.createOscillator = function(opts) {
       var oscillator = this.context.createOscillator();
 
-      oscillator.type = type || 'sine';
-      oscillator.detune = detune || 0;
-      oscillator.frequency.setValueAtTime(110, 0);
+      oscillator.type = opts.type || 'sine';
+      oscillator.detune.value = opts.detune || 0;
+      oscillator.frequency.setTargetAtTime(110, 0, 0);
       oscillator.start(0);
 
       this.oscillators.push(oscillator);
@@ -87,97 +101,124 @@
       return oscillator;
     };
 
-    Synth.prototype.addFilter = function(type, frequency, detune, q, gain) {
+    Synth.prototype.exportOscillator = function(node) {
+      return {nodeType: 'oscillator', type: node.type, detune: node.detune.value};
+    };
+
+    Synth.prototype.createFilter = function(opts) {
       var filter = this.context.createBiquadFilter();
 
-      filter.type = type || 'lowpass';
-      filter.frequency = frequency || 20000;
-      filter.detune = detune || 0;
-      filter.Q = q || 1;
-      filter.gain || 0;
-
-      this.filters.push(filter);
+      filter.type = opts.type || 'lowpass';
+      filter.frequency.value = opts.frequency || 20000;
+      filter.detune.value = opts.detune || 0;
+      filter.Q.value = opts.q || 1;
+      filter.gain.value = opts.gain || 0;
 
       return filter;
     };
 
-    Synth.prototype.addShaper = function(curve, oversample) {
+    Synth.prototype.exportFilter = function(node) {
+      return {nodeType: 'filter', type: node.type, frequency: node.frequency.value, detune: node.detune.value, q: node.Q.value, gain: node.gain.value};
+    };
+
+    Synth.prototype.createShaper = function(opts) {
       var shaper = this.context.createWaveShaper();
 
-      shaper.curve = curve || [-1, 1];
-      shaper.oversample = oversample || 'none';
+      if (opts.curve) {
+        if (Array.isArray(opts.curve)) {
+          shaper.curve = opts.curve;
+        }
+        else {
+          var curveCreator = this.curves.get(opts.curve.type);
+          if (curveCreator) {
+            shaper.curve = curveCreator(opts.curve, this.context.sampleRate);
+            this.info('shaper curve', opts.curve.type, curveCreator, curveCreator(opts.curve, this.context.sampleRate));
+          }
+        }
+      }
 
-      this.shapers.push(shapers);
+      shaper.oversample = opts.oversample || 'none';
 
       return shaper;
     };
 
-    Synth.prototype.addGain = function(gain) {
-      this.gain = this.context.createGain();
-      this.gain.gain = gain;
-      return this.gain;
+    Synth.prototype.exportShaper = function(node) {
+      return {nodeType: 'shaper', curve: node.curve, oversample: node.oversample};
     };
 
-    Synth.prototype.addDelay = function(delay) {
-      this.delay = this.context.createDelay(delay);
-      this.delay.delayTime = delay;
-      return this.delay;
+    Synth.prototype.createDelay = function(opts) {
+      var delayNode = this.context.createDelay(opts.delay);
+      delayNode.delayTime.value = opts.delay || 0;
+
+      return delayNode;
+    };
+
+    Synth.prototype.exportDelay = function(node) {
+      return {nodeType: 'delay', delay: node.delayTime.value};
     };
 
     Synth.prototype.exportSettings = function() {
       var settings = {};
 
-      settings.gain = this.gain && this.gain.gain || 0;
-      settings.delay = this.delay && this.delay.delayTime || 0;
+      settings.gain = this.envelope && this.envelope.gain.value || 0;
 
-      settings.oscillators = this.oscillators.map(function(oscillator) {
-        return {type: oscillator.type, detune: oscillator.detune};
-      });
-
-      settings.filters = this.filters.map(function(filter) {
-        return {type: filter.type, frequency: filter.frequency, detune: filter.detune, q: filter.Q, gain: filter.gain};
-      });
-
-      settings.shapers = this.shapers.map(function(shaper) {
-        return {curve: shaper.curve, oversample: shaper.oversample};
-      });
+      settings.nodes = this.nodes.map(function(node) {
+        var exporter = this.nodeExporters.get(node.nodeType);
+        if (exporter) {
+          return exporter(node);
+        }
+        return {nodeType: node.nodeType};
+      }, this);
 
       return settings;
     };
 
-    Synth.prototype.applySettings = function(settings) {
-      //throw away old context, create new one :/
-      //seems to be the only way to get rid of old filters, etc.
-      return this.context.close().then(function() {
-        this.createContext();
-
-        if (settings.oscillators) {
-          settings.oscillators.forEach(function(values) {
-            var oscillator = this.addOscillator(values.type, values.detune);
-            oscillator.setValueAtTime(110, 0);
-          });
-        }
-
-        if (settings.filters) {
-          settings.filters.forEach(function(values) {
-            this.addFilter(values.type, values.frequency, values.detune, values.q, values.gain)
-          });
-        }
-
-        if (settings.shapers) {
-          settings.shapers.forEach(function(values) {
-            this.addShaper(values.curve, values.oversample);
-          });
-        }
-
-        if (settings.gain) {
-          this.addGain(settings.gain);
-        }
-
-        if (settings.delay) {
-          this.addDelay(settings.delay);
-        }
+    Synth.prototype.removeNodes = function() {
+      this.nodes.forEach(function(pipeline) {
+        pipeline.forEach(function(node) {
+          node.disconnect();
+        });
       });
+      this.nodes = [];
+    };
+
+    Synth.prototype.applySettings = function(settings) {
+      this.removeNodes();
+
+      if (settings.nodes && settings.nodes.length > 0) {
+
+        settings.nodes.forEach(function(pipeline) {
+          var prevNode;
+          var nodes = [];
+
+          pipeline.forEach(function(config) {
+            var creator = this.nodeCreators.get(config.nodeType);
+            if (creator) {
+              var node = creator(config);
+              node.nodeType = config.nodeType;
+
+              if (prevNode) {
+                prevNode.connect(node);
+              }
+
+              prevNode = node;
+              nodes.push(node);
+
+              this.info('Added', config.nodeType, 'node');
+            }
+          }, this);
+
+          prevNode.connect(this.envelope);
+          this.nodes.push(nodes);
+        }, this);
+      }
+
+      if (settings.gain) {
+        this.gain = settings.gain;
+        this.envelope.gain.value = settings.gain;
+      }
+
+      this.info('Applied settings:', settings);
     };
 
     Synth.prototype.initMIDI = function() {
@@ -339,7 +380,7 @@
         });
 
         this.envelope.gain.cancelScheduledValues(0);
-        this.envelope.gain.setTargetAtTime(1.0, 0, attack);
+        this.envelope.gain.setTargetAtTime(this.gain, 0, attack);
 
         this.info('on', this.activeFrequencies.get(frequency));
       }
@@ -396,10 +437,10 @@
   }
 
   if (typeof module === 'object' && typeof require === 'function') {
-    module.exports = defineSynth.call(this, require('associative-array'), require('./default-settings.json'));
+    module.exports = defineSynth.call(this, require('associative-array'), require('./default-settings.json'), require('./curves'));
   }
   else if (typeof define === 'function' && define.amd) {
-    define(['associative-array', 'default-settings.json'], defineSynth.bind(this));
+    define(['associative-array', 'default-settings.json', 'curves'], defineSynth.bind(this));
   }
   else {
     this.Synth = defineSynth.call(this);
