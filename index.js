@@ -364,6 +364,7 @@
     };
 
     Synth.prototype.frequencyFromNoteNumber = function(note) {
+      note = Math.max(21, Math.min(124, note));
       return 440 * Math.pow(2, (note - 69) / 12);
     };
 

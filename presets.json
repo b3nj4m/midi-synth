@@ -32,5 +32,18 @@
       ]
     ],
     "gain": 1
-  }
+  },
+  "basic-brass": {
+    "nodes": [
+      [
+        {"nodeType": "oscillator", "type": "square", "detune": 20},
+        {"nodeType": "filter", "type": "lowpass", "frequency": "5000"}
+      ],
+      [
+        {"nodeType": "oscillator", "type": "square", "detune": 0},
+        {"nodeType": "filter", "type": "lowpass", "frequency": "5000"}
+      ]
+    ],
+    "gain": 1
+  },
 }

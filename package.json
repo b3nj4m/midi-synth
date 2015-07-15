@@ -24,5 +24,14 @@
   "homepage": "https://github.com/b3nj4m/midi-synth#readme",
   "dependencies": {
     "associative-array": "^1.0.1"
+  },
+  "devDependencies": {
+    "browserify": "^10.2.6",
+    "express": "^4.13.1",
+    "gulp": "^3.9.0",
+    "gulp-util": "^3.0.6",
+    "serve-static": "^1.10.0",
+    "vinyl-source-stream": "^1.1.0",
+    "watchify": "^3.2.3"
   }
 }
