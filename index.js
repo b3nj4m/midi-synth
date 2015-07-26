@@ -31,6 +31,7 @@
         ['oscillator', this.createOscillator.bind(this)],
         ['filter', this.createFilter.bind(this)],
         ['shaper', this.createShaper.bind(this)],
+        ['gain', this.createGain.bind(this)],
         ['delay', this.createDelay.bind(this)]
       ]);
 
@@ -38,6 +39,7 @@
         ['oscillator', this.exportOscillator.bind(this)],
         ['filter', this.exportFilter.bind(this)],
         ['shaper', this.exportShaper.bind(this)],
+        ['gain', this.exportGain.bind(this)],
         ['delay', this.exportDelay.bind(this)]
       ]);
 
@@ -83,6 +85,17 @@
       else {
         return Promise.reject('No MIDI support found');
       }
+    };
+
+    Synth.prototype.createGain = function(opts) {
+      var gain = this.context.createGain();
+      gain.gain.value = opts.gain === undefined ? 1.0 : opts.gain;
+
+      return gain;
+    };
+
+    Synth.prototype.exportGain = function(node) {
+      return {nodeType: 'gain', gain: node.gain.value};
     };
 
     Synth.prototype.createOscillator = function(opts) {
