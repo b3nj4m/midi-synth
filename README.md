@@ -99,8 +99,8 @@ var s = new Synth({
 });
 
 s.applySettings({gain: 1.0, nodes: [
-  [{nodeType: 'oscillator', type: 'sine'}, {nodeType: 'filter', type: 'lowpass', frequency: 100}],
-  [{nodeType: 'oscillator', type: 'square'}]
+  [{nodeType: 'oscillator', type: 'sine'}, {nodeType: 'filter', id: 'filter', type: 'lowpass', frequency: 5000}],
+  [{nodeType: 'oscillator', type: 'square', pipe: 'filter'}]
 ]});
 
 //play something on your MIDI keyboard

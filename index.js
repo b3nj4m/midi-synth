@@ -85,10 +85,6 @@
       }
     };
 
-    //TODO JSON format for storing oscillator/filter configurations, naming, saving/loading
-    //TODO nodes need to be setup in a pipeline with a very particular order...
-    //TODO let settings define the pipeline+ordering
-    //{nodes: [{nodeType: oscillator, type, detune}, {nodeType: filter, type, frequency, detune, q, gain}, {nodeType: shaper, curve, oversample}], gain, delay}
     Synth.prototype.createOscillator = function(opts) {
       var oscillator = this.context.createOscillator();
 
@@ -180,6 +176,7 @@
         });
       });
       this.nodes = [];
+      this.nodesById = new Map();
     };
 
     Synth.prototype.applyPreset = function(name) {
@@ -197,7 +194,10 @@
 
       if (settings.nodes && settings.nodes.length > 0) {
 
+        var pipes = [];
+
         settings.nodes.forEach(function(pipeline) {
+          var piped = false;
           var prevNode;
           var nodes = [];
 
@@ -206,6 +206,18 @@
             if (creator) {
               var node = creator(config);
               node.nodeType = config.nodeType;
+
+              //pipes will be dealt with later since their destinations may not exist yet
+              if (config.pipe !== undefined) {
+                piped = true;
+                node.pipe = config.pipe;
+                pipes.push(node);
+              }
+
+              if (config.id) {
+                node.id = config.id;
+                this.nodesById.set(config.id, node);
+              }
 
               if (prevNode) {
                 prevNode.connect(node);
@@ -218,8 +230,21 @@
             }
           }, this);
 
-          prevNode.connect(this.envelope);
+          if (!piped) {
+            prevNode.connect(this.envelope);
+          }
           this.nodes.push(nodes);
+        }, this);
+
+        //hook-up pipes
+        pipes.forEach(function(src) {
+          var dest = this.nodesById.get(node.pipe);
+          if (src && dest) {
+            src.connect(dest);
+          }
+          else {
+            this.info('Unable to pipe', node.id, 'to', node.pipe);
+          }
         }, this);
       }
 
@@ -410,7 +435,7 @@
           this.envelope.gain.setTargetAtTime(0.0, 0, release);
         }
         else {
-          var active = this.activeFrequencies.last();
+          active = this.activeFrequencies.last();
 
           this.oscillators.forEach(function(oscillator) {
             oscillator.frequency.cancelScheduledValues(0);
