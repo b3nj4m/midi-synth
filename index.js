@@ -143,7 +143,7 @@
     };
 
     Synth.prototype.createDelay = function(opts) {
-      var delayNode = this.context.createDelay(opts.delay);
+      var delayNode = this.context.createDelay(opts.delay || 1.0);
       delayNode.delayTime.value = opts.delay || 0;
 
       return delayNode;
@@ -160,10 +160,23 @@
 
       settings.nodes = this.nodes.map(function(node) {
         var exporter = this.nodeExporters.get(node.nodeType);
+        var config;
         if (exporter) {
-          return exporter(node);
+          config = exporter(node);
         }
-        return {nodeType: node.nodeType};
+        else {
+          config = {nodeType: node.nodeType};
+        }
+
+        if (node.id) {
+          config.id = node.id;
+        }
+
+        if (node.pipe) {
+          config.pipe = node.pipe;
+        }
+
+        return config;
       }, this);
 
       return settings;
@@ -238,12 +251,12 @@
 
         //hook-up pipes
         pipes.forEach(function(src) {
-          var dest = this.nodesById.get(node.pipe);
+          var dest = this.nodesById.get(src.pipe);
           if (src && dest) {
             src.connect(dest);
           }
           else {
-            this.info('Unable to pipe', node.id, 'to', node.pipe);
+            this.info('Unable to pipe', src.id || src.type, 'to', src.pipe);
           }
         }, this);
       }

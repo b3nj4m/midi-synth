@@ -37,11 +37,12 @@
     "nodes": [
       [
         {"nodeType": "oscillator", "type": "square", "detune": 20},
-        {"nodeType": "filter", "type": "lowpass", "frequency": "5000"}
+        {"nodeType": "filter", "type": "lowpass", "frequency": 5000},
+        {"nodeType": "delay", "delay": 0.0, "id": "delay1"}
       ],
       [
         {"nodeType": "oscillator", "type": "square", "detune": 0},
-        {"nodeType": "filter", "type": "lowpass", "frequency": "5000"}
+        {"nodeType": "filter", "type": "lowpass", "frequency": 5000, "pipe": "delay1"}
       ]
     ],
     "gain": 1
